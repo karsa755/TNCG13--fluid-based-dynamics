@@ -74,6 +74,27 @@ def setNextKeyParticle( pName, pKeyStart, pTargetAttribute, pValue ):
     cmds.selectKey( pName, time=( pKeyStart, keyNext ), attribute=pTargetAttribute, keyframe=True )
     cmds.keyTangent( inTangentType='linear', outTangentType='linear' )
 
+# Find Neighbouring particles and store them in an 2d array
+def findNeighbours( posX, posY, posZ, nrOfParticles ):
+    radius = 0.5
+    neighbours = []
+    neighbours.append([0])
+
+    for i in range ( 1, nrOfParticles ): 
+        closestNeighbours = []
+
+        for j in range (1, nrOfParticles ):
+            if i == j :
+                continue
+            arrayDistance = [ posX[i] - posX[j], posY[i] - posY[j], posZ[i] - posZ[j] ]
+            distance = math.sqrt(math.pow(arrayDistance[0], 2) + math.pow(arrayDistance[1], 2) + math.pow(arrayDistance[2], 2))
+
+            if(distance < radius) :
+                closestNeighbours.append(j)
+        
+        neighbours.append(closestNeighbours)
+        
+    return neighbours
 
 # ******************************************************#
 
@@ -83,40 +104,61 @@ def setNextKeyParticle( pName, pKeyStart, pTargetAttribute, pValue ):
 
 nrOfParticles = 8*8*8+1
 mass = 5
+# Velocities
+vX = [0] * nrOfParticles
+vY = [0] * nrOfParticles
+vZ = [0] * nrOfParticles
+# Predicted positions
+ppX = [0] * nrOfParticles
+ppY = [0] * nrOfParticles
+ppZ = [0] * nrOfParticles
+gravity = -9.82
+dt = 0.1
+
 
 # Playback options
-keyFrames = 50
-cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 50 )
+keyFrames = 5
+cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 5 )
 startTime = cmds.playbackOptions( query = True, minTime = True )
 endTime = cmds.playbackOptions( query = True, maxTime = True )
 time = startTime
-dt = 1 # 24 f/s
+keyStep = 1
+
 
 # Set first Keyframe for all particles
 for i in range ( 1, nrOfParticles ):
     pos = [ cmds.getAttr( 'particle'+str(i)+'.translateX' ),
             cmds.getAttr( 'particle'+str(i)+'.translateY' ),
             cmds.getAttr( 'particle'+str(i)+'.translateZ' ) ]
+
+    ppX[i] = pos[0]
+    ppY[i] = pos[1]
+    ppZ[i] = pos[2]
     
     setNextKeyParticle( 'particle'+str(i), time, 'translateX', pos[0] )
     setNextKeyParticle( 'particle'+str(i), time, 'translateY', pos[1] )
     setNextKeyParticle( 'particle'+str(i), time, 'translateZ', pos[2] )
-    
-counter = 0
+     
+
 for j in range ( 1, keyFrames ):
     print 'frame: ' + str(j)
-    time += dt
-    counter = counter + 0.1
-    for i in range ( 1, nrOfParticles ):
-        
-        particlePos = [ cmds.getAttr( 'particle'+str(i)+'.translateX' ),
-                        cmds.getAttr( 'particle'+str(i)+'.translateY' ),
-                        cmds.getAttr( 'particle'+str(i)+'.translateZ' ) ]
-       
-        newParticlePosition = [ particlePos[0] + counter, particlePos[1] + counter, particlePos[2] + counter ]
+    time += keyStep
+    
+    for i in range (1, nrOfParticles) :
+        # Apply external forces to velocity
+        vY[i] = vY[i] + dt*gravity
+        # Apply velocity to position estimate
+        ppY[i] = ppY[i] + dt * vY[i]
 
-        # Set keyframes
+    neighbours = findNeighbours(ppX, ppY, ppZ, nrOfParticles)
+
+    for i in range (1, nrOfParticles) :
         cmds.select( 'particle'+str(i) )
-        setNextKeyParticle( 'particle'+str(i), time, 'translateX', newParticlePosition[0] )
-        setNextKeyParticle( 'particle'+str(i), time, 'translateY', newParticlePosition[1] )
-        setNextKeyParticle( 'particle'+str(i), time, 'translateZ', newParticlePosition[2] )
+        setNextKeyParticle( 'particle'+str(i), time, 'translateX', ppX[i] )
+        setNextKeyParticle( 'particle'+str(i), time, 'translateY', ppY[i] )
+        setNextKeyParticle( 'particle'+str(i), time, 'translateZ', ppZ[i] )
+
+
+
+
+ 
