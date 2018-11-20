@@ -96,11 +96,46 @@ def findNeighbours( posX, posY, posZ, nrOfParticles ):
         
     return neighbours
 
+# Calculate lamda (particle constraint) to enforce incompressibility
+def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles) :
+    p_constraint = 0
+    
+    return p_constraint
+
+
+# Pressure kernel (gradient calculations)
+def calculateSpikyGradient(h, p1, p2) :
+    deltaPosX = math.abs(p2[0] - p1[0])
+    deltaPosY = math.abs(p2[1] - p1[1])
+    deltaPosZ = math.abs(p2[2] - p1[2])
+
+    spikyConstant = 15 / (math.pi * math.pow(h, 6))
+    gradX = spikyConstant * math.pow(h-deltaPosX, 3) if deltaPosX >= 0 & deltaPosX <= h else 0
+    gradY = spikyConstant * math.pow(h-deltaPosY, 3) if deltaPosY >= 0 & deltaPosY <= h else 0
+    gradX = spikyConstant * math.pow(h-deltaPosZ, 3) if deltaPosZ >= 0 & deltaPosZ <= h else 0
+
+    return [gradX, gradY, gradZ]
+
+# Density kernel
+def calculatePoly6(h, p1, p2) :
+    deltaPosX = math.abs(p2[0] - p1[0])
+    deltaPosY = math.abs(p2[1] - p1[1])
+    deltaPosZ = math.abs(p2[2] - p1[2])
+
+    poly6Constant = 315 / (math.pi * 64 * math.pow(h, 9))
+    gradX = poly6Constant * math.pow(math.pow(h, 2) - math.pow(deltaPosX, 2), 3) if deltaPosX >= 0 & deltaPosX <= h else 0
+    gradY = poly6Constant * math.pow(math.pow(h, 2) - math.pow(deltaPosY, 2), 3) if deltaPosY >= 0 & deltaPosY <= h else 0
+    gradZ = poly6Constant * math.pow(math.pow(h, 2) - math.pow(deltaPosZ, 2), 3) if deltaPosZ >= 0 & deltaPosZ <= h else 0
+
+    return [gradX, gradY, gradZ]
+
 # ******************************************************#
 
 # ---------------------- MAIN --------------------------
 
 # ******************************************************#
+
+maxIterations = 10
 
 nrOfParticles = 8*8*8+1
 mass = 5
@@ -151,6 +186,12 @@ for j in range ( 1, keyFrames ):
         ppY[i] = ppY[i] + dt * vY[i]
 
     neighbours = findNeighbours(ppX, ppY, ppZ, nrOfParticles)
+    iterations = 0
+    while iterations < maxIterations :
+        
+        
+        
+        iterations = iterations + 1
 
     for i in range (1, nrOfParticles) :
         cmds.select( 'particle'+str(i) )
