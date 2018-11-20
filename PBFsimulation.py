@@ -97,11 +97,44 @@ def findNeighbours( posX, posY, posZ, nrOfParticles ):
     return neighbours
 
 # Calculate lamda (particle constraint) to enforce incompressibility
-def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles) :
-    p_constraint = 0
-    
-    return p_constraint
+def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon) :
 
+    lambdaArray = []
+    lambdaArray.append(0) #dummy
+
+    for i in range (1, nrOfParticles) :
+        gradient_i = [0, 0, 0]
+        sum_gradient = 0 
+        n_i = [posX[i], posY[i], posZ[i]]
+
+        densityResult = 0
+
+        for j in range (1, len(neighbours[i])) :
+            n_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
+            gradient_j = calculateSpikyGradient(1, n_j, n_i) * rho_0
+            sum_gradient = sum_gradient + dotProduct(gradient_j, gradient_j)
+            addToVec(gradient_i, gradient_j)
+
+            densityResult = densityResult + calculatePoly6(1, n_j, n_i)
+        
+        sum_gradient = sum_gradient + dotProduct(gradient_i, gradient_i)
+
+        density_constraint = (densityResult / rho_0) - 1
+        result = -density_constraint / (sum_gradient + epsilon)
+        lambdaArray.append(result)
+        
+    return lambdaArray
+
+
+def dotProduct(v1, v2):
+    return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]
+
+def addToVec(res, v):
+    res[0] = res[0] + v[0]
+    res[1] = res[1] + v[1]
+    res[2] = res[2] + v[2]
+  
+    
 
 # Pressure kernel (gradient calculations)
 def calculateSpikyGradient(h, p1, p2) :
@@ -118,16 +151,16 @@ def calculateSpikyGradient(h, p1, p2) :
 
 # Density kernel
 def calculatePoly6(h, p1, p2) :
-    deltaPosX = math.abs(p2[0] - p1[0])
-    deltaPosY = math.abs(p2[1] - p1[1])
-    deltaPosZ = math.abs(p2[2] - p1[2])
+    deltaPosX = p2[0] - p1[0]
+    deltaPosY = p2[1] - p1[1]
+    deltaPosZ = p2[2] - p1[2]
+
+    length = math.sqrt(math.pow(deltaPosX, 2) + math.pow(deltaPosY, 2) + math.pow(deltaPosZ, 2))
 
     poly6Constant = 315 / (math.pi * 64 * math.pow(h, 9))
-    gradX = poly6Constant * math.pow(math.pow(h, 2) - math.pow(deltaPosX, 2), 3) if deltaPosX >= 0 & deltaPosX <= h else 0
-    gradY = poly6Constant * math.pow(math.pow(h, 2) - math.pow(deltaPosY, 2), 3) if deltaPosY >= 0 & deltaPosY <= h else 0
-    gradZ = poly6Constant * math.pow(math.pow(h, 2) - math.pow(deltaPosZ, 2), 3) if deltaPosZ >= 0 & deltaPosZ <= h else 0
+    grad = poly6Constant * math.pow(math.pow(h, 2) - math.pow(length, 2), 3) if length >= 0 & length <= h else 0
 
-    return [gradX, gradY, gradZ]
+    return grad
 
 # ******************************************************#
 
