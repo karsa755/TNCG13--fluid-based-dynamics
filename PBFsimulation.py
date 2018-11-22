@@ -41,13 +41,13 @@ cmds.setAttr( 'lambert1.refractiveIndex', 1.52 )
 cmds.setAttr( 'lambert1.color', 0.4, 0.8, 1, type = 'double3' )
 
 # ----- Create Particles -----
-
+particleRadius = 0.15
 count = 0
 for i in range( 0, 8 ):
     for j in range( 0, 8 ):
         for k in range( 0, 8 ):
             count=count+1
-            result = cmds.polySphere( r=0.15, sx=1, sy=1, name='particle#' )
+            result = cmds.polySphere( r=particleRadius, sx=1, sy=1, name='particle#' )
             cmds.select('particle' + str(count)) 
             cmds.move(-i*0.35+0.75, 3+j*0.35, k*0.35-0.75,'particle' + str(count))
 
@@ -169,6 +169,10 @@ def calculateDeltaPos( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsil
     deltaPosX = []
     deltaPosY = []
     deltaPosZ = []
+
+    deltaPosX.append(0.0)
+    deltaPosY.append(0.0)
+    deltaPosZ.append(0.0)
     
     for i in range (1, nrOfParticles) :
         lambda_i = lambdas[i]
@@ -195,15 +199,45 @@ def calculateDeltaPos( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsil
         deltaPosY.append(resultY)
         deltaPosZ.append(resultZ)
 
-
     return [deltaPosX, deltaPosY, deltaPosZ] 
-
-
-
 
 def computeCorrectionScore(k, h, n, dQ, p1, p2) :
     constraint = calculatePoly6(h, p1, p2) / calculatePoly6Scalar(h, dQ * h)
     return -k * math.pow(constraint, n)
+
+# MAYBE TODO: Add collisions between particles as well 
+def calculateCollisionResponse(posX, posY, posZ, dX, dY, dZ, vX, vY, vZ, particleRadius) :
+    # Bounding condition for the transparent box
+    xMin = -2.5 + particleRadius
+    xMax = 2.5 - particleRadius
+    yMin = -0.5
+    zMin = -2.5 + particleRadius
+    zMax = 2.5 - particleRadius
+
+    posX = posX + dX
+    posY = posY + dY
+    posZ = posZ + dZ
+
+    if posX < xMin :
+        posX = xMin
+        vX = 0.0
+    elif posX > xMax :
+        posX = xMax
+        vX = 0.0
+
+    if posY < yMin :
+        posY = yMin
+        vY = 0.0
+
+    if posZ < zMin :
+        posZ = zMin
+        vZ = 0.0
+    elif posZ > zMax :
+        posZ = zMax
+        vZ = 0.0
+
+    return [posX, posY, posZ, vX, vY, vZ]
+    
 
 # ******************************************************#
 
@@ -235,11 +269,9 @@ vorticityEps = 1.0
 XSPHC = 0.001
 h = 1.2
 
-
-
 # Playback options
-keyFrames = 5
-cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 5 )
+keyFrames = 50
+cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 50 )
 startTime = cmds.playbackOptions( query = True, minTime = True )
 endTime = cmds.playbackOptions( query = True, maxTime = True )
 time = startTime
@@ -274,11 +306,28 @@ for j in range ( 1, keyFrames ):
     neighbours = findNeighbours(ppX, ppY, ppZ, nrOfParticles)
     iterations = 0
     while iterations < maxIterations :
-        lambdas = calculateLambda( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, h)
-        
+        lambdas = calculateLambda( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, h)     
         deltaPos = calculateDeltaPos( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, lambdas, correctionK, h, correctionN, correctionDeltaQ)
-        
+
+        for i in range (1, nrOfParticles) :
+            collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], deltaPos[0][i], deltaPos[1][i], deltaPos[2][i], vX[i], vY[i], vZ[i], particleRadius)
+            ppX[i] = collision[0]
+            ppY[i] = collision[1]
+            ppZ[i] = collision[2]
+            vX[i] = collision[3]
+            vY[i] = collision[4]
+            vZ[i] = collision[5]
+
         iterations = iterations + 1
+
+    for i in range (1, nrOfParticles) :
+        pos = [ cmds.getAttr( 'particle'+str(i)+'.translateX' ),
+                cmds.getAttr( 'particle'+str(i)+'.translateY' ),
+                cmds.getAttr( 'particle'+str(i)+'.translateZ' ) ]
+
+        vX[i] = (1.0/dt) * (ppX[i] - pos[0])
+        vY[i] = (1.0/dt) * (ppY[i] - pos[1])
+        vZ[i] = (1.0/dt) * (ppZ[i] - pos[2])
 
     for i in range (1, nrOfParticles) :
         cmds.select( 'particle'+str(i) )
