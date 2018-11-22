@@ -260,6 +260,62 @@ def calculateVorticityConfinement(h, posX, posY, posZ, vX, vY, vZ, neighbours) :
         
     return vorticity
 
+def computeCorrectiveForce(h, posX, posY, posZ, vorticity, vortEps) :
+    corrForce = []
+    corrForce.append([0.0, 0.0, 0.0])
+
+    for i in range (1, nrOfParticles) :
+        result = [0.0, 0.0, 0.0]
+
+        pos_i = [posX[i], posY[i], posZ[i]]
+        for j in range (1, len(neighbours[i])) :
+            pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
+            spiky = calculateSpikyGradient(h, pos_j, pos_i)
+            vortLength = getLengthOfVec(vorticity[neighbours[i][j]])
+            spiky = [spiky[0] * vortLength, spiky[1] * vortLength, spiky[2] * vortLength]
+            addToVec(result, spiky)
+        
+        resultLength = getLengthOfVec(result)
+        
+        if resultLength <= 0.0001 :
+            print resultLength
+            corrForce.append([0.0, 0.0, 0.0])
+            continue
+
+        result = [result[0] / resultLength, result[1] / resultLength, result[2] / resultLength]
+
+        cross = crossProduct(result, vorticity[i])
+        cross = [cross[0] * vortEps, cross[1] * vortEps, cross[2] * vortEps]
+        corrForce.append(cross)
+
+    return corrForce
+            
+
+def getLengthOfVec(v) :
+    return math.sqrt(dotProduct(v,v))
+
+def computeXSPHViscosity(c, h, posX, posY, posZ, vX, vY, vZ, neighbours) : 
+    viscosity = []
+    viscosity.append([0.0, 0.0, 0.0])
+
+    for i in range (1, nrOfParticles) :
+        result = [0.0, 0.0, 0.0]
+
+        v_i = [vX[i], vY[i], vZ[i]]
+        pos_i = [posX[i], posY[i], posZ[i]]
+        for j in range (1, len(neighbours[i])) :
+            v_j = [vX[neighbours[i][j]], vY[neighbours[i][j]], vZ[neighbours[i][j]]]
+            pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
+            polyKernel = calculatePoly6(h, pos_j, pos_i)
+            v_ij = [v_j[0] - v_i[0], v_j[1] - v_i[1], v_j[2] - v_i[2]]
+            v_ij = [v_ij[0] * polyKernel, v_ij[1] * polyKernel, v_ij[2] * polyKernel]
+
+            addToVec(result, v_ij)
+        
+        result = [result[0] * c, result[1] * c, result[2] * c]
+        viscosity.append(result)
+    
+    return viscosity
 
 # ******************************************************#
 
@@ -292,8 +348,8 @@ XSPHC = 0.001
 h = 1.2
 
 # Playback options
-keyFrames = 5
-cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 5 )
+keyFrames = 50
+cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 50 )
 startTime = cmds.playbackOptions( query = True, minTime = True )
 endTime = cmds.playbackOptions( query = True, maxTime = True )
 time = startTime
@@ -352,14 +408,17 @@ for j in range ( 1, keyFrames ):
         vZ[i] = (1.0/dt) * (ppZ[i] - pos[2])
     
     vorticity = calculateVorticityConfinement(h, ppX, ppY, ppZ, vX, vY, vZ, neighbours)
+    corrForce = computeCorrectiveForce(h, ppX, ppY, ppZ, vorticity, vorticityEps)
+    viscosity = computeXSPHViscosity(XSPHC, h, ppX, ppY, ppZ, vX, vY, vZ, neighbours)
+
+    for i in range (1, nrOfParticles) :
+        vX[i] = vX[i] + dt*corrForce[i][0] + viscosity[i][0]
+        vY[i] = vY[i] + dt*corrForce[i][1] + viscosity[i][1]
+        vZ[i] = vZ[i] + dt*corrForce[i][2] + viscosity[i][2]
+    
 
     for i in range (1, nrOfParticles) :
         cmds.select( 'particle'+str(i) )
         setNextKeyParticle( 'particle'+str(i), time, 'translateX', ppX[i] )
         setNextKeyParticle( 'particle'+str(i), time, 'translateY', ppY[i] )
         setNextKeyParticle( 'particle'+str(i), time, 'translateZ', ppZ[i] )
-
-
-
-
- 
