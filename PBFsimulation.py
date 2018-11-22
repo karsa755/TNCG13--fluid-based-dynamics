@@ -130,6 +130,9 @@ def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon
 def dotProduct(v1, v2):
     return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]
 
+def crossProduct(v1, v2):
+    return [v1[1]*v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2], v1[0] * v2[1] - v1[1] * v2[0]] 
+
 def addToVec(res, v):
     res[0] = res[0] + v[0]
     res[1] = res[1] + v[1]
@@ -238,6 +241,25 @@ def calculateCollisionResponse(posX, posY, posZ, dX, dY, dZ, vX, vY, vZ, particl
 
     return [posX, posY, posZ, vX, vY, vZ]
     
+def calculateVorticityConfinement(h, posX, posY, posZ, vX, vY, vZ, neighbours) :
+    vorticity = []
+    vorticity.append([0.0, 0.0, 0.0])
+
+    for i in range (1, nrOfParticles) :
+        result = [0.0, 0.0, 0.0]
+        v_i = [vX[i], vY[i], vZ[i]]
+        pos_i = [posX[i], posY[i], posZ[i]]
+        for j in range (1, len(neighbours[i])) :
+            v_j = [vX[neighbours[i][j]], vY[neighbours[i][j]], vZ[neighbours[i][j]]]
+            pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
+            v_ij = [v_j[0] - v_i[0], v_j[1] - v_i[1], v_j[2] - v_i[2]]
+            spiky = calculateSpikyGradient(h, pos_j, pos_i)
+            addToVec(result, crossProduct(v_ij, spiky))
+
+        vorticity.append(result)
+        
+    return vorticity
+
 
 # ******************************************************#
 
@@ -270,8 +292,8 @@ XSPHC = 0.001
 h = 1.2
 
 # Playback options
-keyFrames = 50
-cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 50 )
+keyFrames = 5
+cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 5 )
 startTime = cmds.playbackOptions( query = True, minTime = True )
 endTime = cmds.playbackOptions( query = True, maxTime = True )
 time = startTime
@@ -328,6 +350,8 @@ for j in range ( 1, keyFrames ):
         vX[i] = (1.0/dt) * (ppX[i] - pos[0])
         vY[i] = (1.0/dt) * (ppY[i] - pos[1])
         vZ[i] = (1.0/dt) * (ppZ[i] - pos[2])
+    
+    vorticity = calculateVorticityConfinement(h, ppX, ppY, ppZ, vX, vY, vZ, neighbours)
 
     for i in range (1, nrOfParticles) :
         cmds.select( 'particle'+str(i) )
