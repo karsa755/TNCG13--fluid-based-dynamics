@@ -97,7 +97,7 @@ def findNeighbours( posX, posY, posZ, nrOfParticles ):
     return neighbours
 
 # Calculate lamda (particle constraint) to enforce incompressibility
-def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon) :
+def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon, h) :
 
     lambdaArray = []
     lambdaArray.append(0) #dummy
@@ -111,11 +111,12 @@ def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon
 
         for j in range (1, len(neighbours[i])) :
             n_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
-            gradient_j = calculateSpikyGradient(1, n_j, n_i) * rho_0
+            gradient_j = calculateSpikyGradient(h, n_j, n_i)
+            gradient_j = [gradient_j[0] * rho_0, gradient_j[1] * rho_0, gradient_j[2] * rho_0] 
             sum_gradient = sum_gradient + dotProduct(gradient_j, gradient_j)
             addToVec(gradient_i, gradient_j)
 
-            densityResult = densityResult + calculatePoly6(1, n_j, n_i)
+            densityResult = densityResult + calculatePoly6(h, n_j, n_i)
         
         sum_gradient = sum_gradient + dotProduct(gradient_i, gradient_i)
 
@@ -138,14 +139,14 @@ def addToVec(res, v):
 
 # Pressure kernel (gradient calculations)
 def calculateSpikyGradient(h, p1, p2) :
-    deltaPosX = math.abs(p2[0] - p1[0])
-    deltaPosY = math.abs(p2[1] - p1[1])
-    deltaPosZ = math.abs(p2[2] - p1[2])
+    deltaPosX = p2[0] - p1[0]
+    deltaPosY = p2[1] - p1[1]
+    deltaPosZ = p2[2] - p1[2]
 
     spikyConstant = 15 / (math.pi * math.pow(h, 6))
-    gradX = spikyConstant * math.pow(h-deltaPosX, 3) if deltaPosX >= 0 & deltaPosX <= h else 0
-    gradY = spikyConstant * math.pow(h-deltaPosY, 3) if deltaPosY >= 0 & deltaPosY <= h else 0
-    gradX = spikyConstant * math.pow(h-deltaPosZ, 3) if deltaPosZ >= 0 & deltaPosZ <= h else 0
+    gradX = spikyConstant * math.pow(h-deltaPosX, 3) if deltaPosX >= 0.0 and deltaPosX <= h else 0.0
+    gradY = spikyConstant * math.pow(h-deltaPosY, 3) if deltaPosY >= 0.0 and deltaPosY <= h else 0.0
+    gradZ = spikyConstant * math.pow(h-deltaPosZ, 3) if deltaPosZ >= 0.0 and deltaPosZ <= h else 0.0
 
     return [gradX, gradY, gradZ]
 
@@ -157,10 +158,52 @@ def calculatePoly6(h, p1, p2) :
 
     length = math.sqrt(math.pow(deltaPosX, 2) + math.pow(deltaPosY, 2) + math.pow(deltaPosZ, 2))
 
-    poly6Constant = 315 / (math.pi * 64 * math.pow(h, 9))
-    grad = poly6Constant * math.pow(math.pow(h, 2) - math.pow(length, 2), 3) if length >= 0 & length <= h else 0
+    return calculatePoly6Scalar(h, length)
 
+def calculatePoly6Scalar(h, scalar) :
+    poly6Constant = 315 / (math.pi * 64 * math.pow(h, 9))
+    grad = poly6Constant * math.pow(math.pow(h, 2) - math.pow(scalar, 2), 3) if scalar >= 0 and scalar <= h else 0
     return grad
+
+def calculateDeltaPos( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon, lambdas, k, h, n, dQ):
+    deltaPosX = []
+    deltaPosY = []
+    deltaPosZ = []
+    
+    for i in range (1, nrOfParticles) :
+        lambda_i = lambdas[i]
+        resultX = 0.0
+        resultY = 0.0
+        resultZ = 0.0
+        for j in range (1, len(neighbours[i])) :
+            lambda_j = lambdas[neighbours[i][j]]
+            lambda_ij = lambda_j + lambda_i
+
+            pos_i = [posX[i], posY[i], posZ[i]]
+            pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
+            corrScore = computeCorrectionScore(k, h, n, dQ, pos_i, pos_j)
+            spiky = calculateSpikyGradient(h, pos_j, pos_i)
+
+            resultX = (lambda_ij + corrScore) * spiky[0] 
+            resultY = (lambda_ij + corrScore) * spiky[1] 
+            resultZ = (lambda_ij + corrScore) * spiky[2] 
+        
+        resultX = resultX * rho_0
+        resultY = resultY * rho_0
+        resultZ = resultZ * rho_0
+        deltaPosX.append(resultX)
+        deltaPosY.append(resultY)
+        deltaPosZ.append(resultZ)
+
+
+    return [deltaPosX, deltaPosY, deltaPosZ] 
+
+
+
+
+def computeCorrectionScore(k, h, n, dQ, p1, p2) :
+    constraint = calculatePoly6(h, p1, p2) / calculatePoly6Scalar(h, dQ * h)
+    return -k * math.pow(constraint, n)
 
 # ******************************************************#
 
@@ -168,7 +211,7 @@ def calculatePoly6(h, p1, p2) :
 
 # ******************************************************#
 
-maxIterations = 10
+maxIterations = 2
 
 nrOfParticles = 8*8*8+1
 mass = 5
@@ -180,8 +223,18 @@ vZ = [0] * nrOfParticles
 ppX = [0] * nrOfParticles
 ppY = [0] * nrOfParticles
 ppZ = [0] * nrOfParticles
+
 gravity = -9.82
 dt = 0.1
+rho_0 = 1.0
+epsilon = 200
+correctionK = 0.001
+correctionN = 4.0
+correctionDeltaQ = 0.3
+vorticityEps = 1.0
+XSPHC = 0.001
+h = 1.2
+
 
 
 # Playback options
@@ -221,8 +274,9 @@ for j in range ( 1, keyFrames ):
     neighbours = findNeighbours(ppX, ppY, ppZ, nrOfParticles)
     iterations = 0
     while iterations < maxIterations :
+        lambdas = calculateLambda( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, h)
         
-        
+        deltaPos = calculateDeltaPos( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, lambdas, correctionK, h, correctionN, correctionDeltaQ)
         
         iterations = iterations + 1
 
