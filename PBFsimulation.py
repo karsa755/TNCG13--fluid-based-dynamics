@@ -137,8 +137,35 @@ def addToVec(res, v):
     res[0] = res[0] + v[0]
     res[1] = res[1] + v[1]
     res[2] = res[2] + v[2]
+
+def addVec(v1, v2):
+    res = []
+    res.append(v1[0] + v2[0])
+    res.append(v1[1] + v2[1])
+    res.append(v1[2] + v2[2])
+    return res
   
-    
+def scalarMult(v, s) :
+    v[0] = s * v[0]
+    v[1] = s * v[1]
+    v[2] = s * v[2]
+
+def returnScalarMult(v, s) :
+    res = []
+    res.append(s * v[0])
+    res.append(s * v[1])
+    res.append(s * v[2])
+    return res
+
+def normalize(v) :
+    length = getLengthOfVec(v)
+    return returnScalarMult(v, 1.0 / length)
+
+def getLengthOfVec(v) :
+    return math.sqrt(dotProduct(v,v))
+
+def getDistance(v1, v2) :
+    return math.sqrt(math.pow(v1[0]-v2[0], 2) + math.pow(v1[1]-v2[1], 2) + math.pow(v1[2]-v2[2], 2))
 
 # Pressure kernel (gradient calculations)
 def calculateSpikyGradient(h, p1, p2) :
@@ -208,18 +235,79 @@ def computeCorrectionScore(k, h, n, dQ, p1, p2) :
     constraint = calculatePoly6(h, p1, p2) / calculatePoly6Scalar(h, dQ * h)
     return -k * math.pow(constraint, n)
 
+def calculateParticleCollisionResponse(posX, posY, posZ, dX, dY, dZ, vX, vY, vZ, particleRadius, neighbours) :
+
+    offset = 0.01
+
+    for i in range (1, nrOfParticles) :
+        posX[i] = posX[i] + dX[i]
+        posY[i] = posY[i] + dY[i]
+        posZ[i] = posZ[i] + dZ[i]
+
+    for i in range (1, nrOfParticles) :
+        pos_i = [posX[i], posY[i], posZ[i]]
+        for j in range (1, len(neighbours[i])) :
+            pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
+            distance = getDistance(pos_i, pos_j)
+            if distance <= 2.0 * particleRadius : # COLLISION!
+                v_i = [vX[i], vY[i], vZ[i]]
+                v_j = [vX[j], vY[j], vZ[j]]
+
+                vecBetweenParticles = [pos_j[0] - pos_i[0], pos_j[1] - pos_i[1], pos_j[2] - pos_i[2]]
+                vecBetweenParticles = normalize(vecBetweenParticles)
+                scalarMult(vecBetweenParticles, distance)
+                collisionPoint = addVec(pos_i, vecBetweenParticles)
+
+                vecBetweenParticles = normalize(vecBetweenParticles)
+
+                negVec = returnScalarMult(returnScalarMult(vecBetweenParticles, -1.0), offset)
+                posX[i] = posX[i] + negVec[0]
+                posY[i] = posY[i] + negVec[1]
+                posZ[i] = posZ[i] + negVec[2]
+                
+                posX[neighbours[i][j]] = posX[neighbours[i][j]] + offset * vecBetweenParticles[0]
+                posY[neighbours[i][j]] = posY[neighbours[i][j]] + offset * vecBetweenParticles[1]
+                posZ[neighbours[i][j]] = posZ[neighbours[i][j]] + offset * vecBetweenParticles[2]
+
+                newVels = calculateNewVelocities(v_i, v_j, vecBetweenParticles)
+                vX[i] = newVels[0][0]
+                vY[i] = newVels[0][1]
+                vZ[i] = newVels[0][2]
+                
+                vX[neighbours[i][j]] = newVels[1][0]
+                vY[neighbours[i][j]] = newVels[1][1]
+                vZ[neighbours[i][j]] = newVels[1][2]
+                
+
+
+    return [posX, posY, posZ, vX, vY, vZ]
+
+def calculateNewVelocities(v_i, v_j, xBasis) :
+    
+    # first sphere
+    vecv1x = [xBasis[0]*v_j[0], 0, 0] 
+    vecv1y = addVec(v_j, returnScalarMult(vecv1x, -1.0)) 
+
+    # second sphere
+    xBasis2 = returnScalarMult(xBasis, -1.0)
+    vecv2x = [xBasis2[0]*v_i[0], 0, 0]
+    vecv2y = addVec(v_i, returnScalarMult(vecv2x, -1.0)) 
+
+    newVel_j = vecv2x + vecv1y
+    newVel_i = vecv1x + vecv2y
+
+    return [newVel_i, newVel_j]
+
+
+
 # MAYBE TODO: Add collisions between particles as well 
-def calculateCollisionResponse(posX, posY, posZ, dX, dY, dZ, vX, vY, vZ, particleRadius) :
+def calculateCollisionResponse(posX, posY, posZ, vX, vY, vZ, particleRadius) :
     # Bounding condition for the transparent box
     xMin = -2.5 + particleRadius
     xMax = 2.5 - particleRadius
     yMin = -0.5
     zMin = -2.5 + particleRadius
     zMax = 2.5 - particleRadius
-
-    posX = posX + dX
-    posY = posY + dY
-    posZ = posZ + dZ
 
     if posX < xMin :
         posX = xMin
@@ -278,7 +366,6 @@ def computeCorrectiveForce(h, posX, posY, posZ, vorticity, vortEps) :
         resultLength = getLengthOfVec(result)
         
         if resultLength <= 0.0001 :
-            print resultLength
             corrForce.append([0.0, 0.0, 0.0])
             continue
 
@@ -290,9 +377,6 @@ def computeCorrectiveForce(h, posX, posY, posZ, vorticity, vortEps) :
 
     return corrForce
             
-
-def getLengthOfVec(v) :
-    return math.sqrt(dotProduct(v,v))
 
 def computeXSPHViscosity(c, h, posX, posY, posZ, vX, vY, vZ, neighbours) : 
     viscosity = []
@@ -323,7 +407,7 @@ def computeXSPHViscosity(c, h, posX, posY, posZ, vX, vY, vZ, neighbours) :
 
 # ******************************************************#
 
-maxIterations = 2
+maxIterations = 1
 
 nrOfParticles = 8*8*8+1
 mass = 5
@@ -337,7 +421,7 @@ ppY = [0] * nrOfParticles
 ppZ = [0] * nrOfParticles
 
 gravity = -9.82
-dt = 0.1
+dt = 0.012
 rho_0 = 1.0
 epsilon = 200
 correctionK = 0.001
@@ -387,8 +471,17 @@ for j in range ( 1, keyFrames ):
         lambdas = calculateLambda( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, h)     
         deltaPos = calculateDeltaPos( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, lambdas, correctionK, h, correctionN, correctionDeltaQ)
 
+        particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, deltaPos[0], deltaPos[1], deltaPos[2], vX, vY, vZ, particleRadius, neighbours)
+        ppX = particleCollision[0]
+        ppY = particleCollision[1]
+        ppZ = particleCollision[2]
+        vX = particleCollision[3]
+        vY = particleCollision[4]
+        vZ = particleCollision[5]
+
         for i in range (1, nrOfParticles) :
-            collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], deltaPos[0][i], deltaPos[1][i], deltaPos[2][i], vX[i], vY[i], vZ[i], particleRadius)
+            
+            collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], vX[i], vY[i], vZ[i], particleRadius)
             ppX[i] = collision[0]
             ppY[i] = collision[1]
             ppZ[i] = collision[2]
@@ -412,9 +505,9 @@ for j in range ( 1, keyFrames ):
     viscosity = computeXSPHViscosity(XSPHC, h, ppX, ppY, ppZ, vX, vY, vZ, neighbours)
 
     for i in range (1, nrOfParticles) :
-        vX[i] = vX[i] + dt*corrForce[i][0] + viscosity[i][0]
-        vY[i] = vY[i] + dt*corrForce[i][1] + viscosity[i][1]
-        vZ[i] = vZ[i] + dt*corrForce[i][2] + viscosity[i][2]
+        vX[i] = vX[i] + viscosity[i][0] + dt*corrForce[i][0] 
+        vY[i] = vY[i] + viscosity[i][1] + dt*corrForce[i][1] 
+        vZ[i] = vZ[i] + viscosity[i][2] + dt*corrForce[i][2] 
     
 
     for i in range (1, nrOfParticles) :
