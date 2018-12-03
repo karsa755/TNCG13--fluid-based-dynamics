@@ -43,9 +43,12 @@ cmds.setAttr( 'lambert1.color', 0.4, 0.8, 1, type = 'double3' )
 # ----- Create Particles -----
 particleRadius = 0.15
 count = 0
-for i in range( 0, 8 ):
-    for j in range( 0, 8 ):
-        for k in range( 0, 8 ):
+height = 8
+width = 8
+depth = 8
+for i in range( 0, width ):
+    for j in range( 0, height ):
+        for k in range( 0, depth ):
             count=count+1
             result = cmds.polySphere( r=particleRadius, sx=1, sy=1, name='particle#' )
             cmds.select('particle' + str(count)) 
@@ -97,6 +100,13 @@ def addVec(v1, v2):
     res.append(v1[2] + v2[2])
     return res
   
+def subtractVec(v1, v2):
+    res = []
+    res.append(v1[0] - v2[0])
+    res.append(v1[1] - v2[1])
+    res.append(v1[2] - v2[2])
+    return res
+
 def scalarMult(v, s) :
     v[0] = s * v[0]
     v[1] = s * v[1]
@@ -254,11 +264,9 @@ def calculateParticleCollisionResponse(posX, posY, posZ, vX, vY, vZ, particleRad
             distance = getDistance(pos_i, pos_j)
             if distance <= 2.0 * particleRadius and distance > 0.0 : # COLLISION!
                 v_i = [vX[i], vY[i], vZ[i]]
-                v_j = [vX[j], vY[j], vZ[j]]
+                v_j = [vX[neighbours[i][j]], vY[neighbours[i][j]], vZ[neighbours[i][j]]]
 
                 vecBetweenParticles = [pos_j[0] - pos_i[0], pos_j[1] - pos_i[1], pos_j[2] - pos_i[2]]
-                vecBetweenParticles = normalize(vecBetweenParticles)
-                scalarMult(vecBetweenParticles, distance)
                 collisionPoint = addVec(pos_i, vecBetweenParticles)
 
                 vecBetweenParticles = normalize(vecBetweenParticles)
@@ -272,7 +280,7 @@ def calculateParticleCollisionResponse(posX, posY, posZ, vX, vY, vZ, particleRad
                 posY[neighbours[i][j]] = posY[neighbours[i][j]] + offset * vecBetweenParticles[1]
                 posZ[neighbours[i][j]] = posZ[neighbours[i][j]] + offset * vecBetweenParticles[2]
 
-                newVels = calculateNewVelocities(v_i, v_j, vecBetweenParticles)
+                newVels = calculateNewVelocities(pos_i, pos_j, v_i, v_j)
                 vX[i] = newVels[0][0]
                 vY[i] = newVels[0][1]
                 vZ[i] = newVels[0][2]
@@ -283,20 +291,28 @@ def calculateParticleCollisionResponse(posX, posY, posZ, vX, vY, vZ, particleRad
 
     return [posX, posY, posZ, vX, vY, vZ]
 
-def calculateNewVelocities(v_i, v_j, xBasis) :
-    # first sphere
-    vecv1x = [xBasis[0]*v_j[0], 0, 0] 
-    vecv1y = addVec(v_j, returnScalarMult(vecv1x, -1.0)) 
+def calculateNewVelocities(pos_i, pos_j, v_i, v_j) :
+    pos_ij = subtractVec(pos_i, pos_j)
+    pos_ji = subtractVec(pos_j, pos_i)
 
-    # second sphere
-    xBasis2 = returnScalarMult(xBasis, -1.0)
-    vecv2x = [xBasis2[0]*v_i[0], 0, 0]
-    vecv2y = addVec(v_i, returnScalarMult(vecv2x, -1.0)) 
+    nv1 = projectV1V2(v_j, pos_ji)
+    nv1 = subtractVec(nv1, projectV1V2(v_i, pos_ij))
 
-    newVel_j = addVec(vecv2x, vecv1y)
-    newVel_i = addVec(vecv1x, vecv2y)
+    nv2 = projectV1V2(v_i, pos_ji)
+    nv2 = subtractVec(nv2, projectV1V2(v_j, pos_ij))
 
-    return [newVel_i, newVel_j]
+    return [nv1, nv2]
+
+def projectV1V2(v1, v2) :
+    c_1 = dotProduct(v1, v2)
+    c_2 = dotProduct(v2, v2)
+
+    finalV = returnScalarMult(v1, c_1)
+    scalarMult(finalV, 1.0/c_2)
+
+    return finalV    
+
+
 
 def calculateCollisionResponse(posX, posY, posZ, vX, vY, vZ, particleRadius) :
     # Bounding condition for the transparent box
@@ -404,7 +420,7 @@ def computeXSPHViscosity(c, h, posX, posY, posZ, vX, vY, vZ, neighbours) :
 
 maxIterations = 10
 
-nrOfParticles = 8*8*8+1
+nrOfParticles = height * width * depth + 1
 mass = 1.0
 # Velocities
 vX = [0] * nrOfParticles
@@ -427,8 +443,8 @@ XSPHC = 0.001
 h = 1.2
 
 # Playback options
-keyFrames = 50
-cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 50 )
+keyFrames = 100
+cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 100 )
 startTime = cmds.playbackOptions( query = True, minTime = True )
 endTime = cmds.playbackOptions( query = True, maxTime = True )
 time = startTime
@@ -471,24 +487,24 @@ for j in range ( 1, keyFrames ):
             ppY[i] = ppY[i] + deltaPos[1][i]
             ppZ[i] = ppZ[i] + deltaPos[2][i]
 
+        particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, vX, vY, vZ, particleRadius, neighbours)
+        ppX = particleCollision[0]
+        ppY = particleCollision[1]
+        ppZ = particleCollision[2]
+        vX = particleCollision[3]
+        vY = particleCollision[4]
+        vZ = particleCollision[5]
+
+        for i in range (1, nrOfParticles) :           
+            collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], vX[i], vY[i], vZ[i], particleRadius)
+            ppX[i] = collision[0]
+            ppY[i] = collision[1]
+            ppZ[i] = collision[2]
+            vX[i] = collision[3]
+            vY[i] = collision[4]
+            vZ[i] = collision[5]
+
         iterations = iterations + 1
-
-    particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, vX, vY, vZ, particleRadius, neighbours)
-    ppX = particleCollision[0]
-    ppY = particleCollision[1]
-    ppZ = particleCollision[2]
-    vX = particleCollision[3]
-    vY = particleCollision[4]
-    vZ = particleCollision[5]
-
-    for i in range (1, nrOfParticles) :           
-        collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], vX[i], vY[i], vZ[i], particleRadius)
-        ppX[i] = collision[0]
-        ppY[i] = collision[1]
-        ppZ[i] = collision[2]
-        vX[i] = collision[3]
-        vY[i] = collision[4]
-        vZ[i] = collision[5]
 
     for i in range (1, nrOfParticles) :
         pos = [ cmds.getAttr( 'particle'+str(i)+'.translateX' ),
