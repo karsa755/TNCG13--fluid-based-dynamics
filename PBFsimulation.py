@@ -135,30 +135,34 @@ def getDistance(v1, v2) :
 
 # Pressure kernel (gradient calculations)
 def calculateSpikyGradient(h, p1, p2) :
-    deltaPosX = p2[0] - p1[0]
-    deltaPosY = p2[1] - p1[1]
-    deltaPosZ = p2[2] - p1[2]
+    r = subtractVec(p1, p2)
+    r_len = getLengthOfVec(r)
 
-    spikyConstant = 15 / (math.pi * math.pow(h, 6))
-    gradX = spikyConstant * math.pow(h-deltaPosX, 3) if deltaPosX >= 0.0 and deltaPosX <= h else 0.0
-    gradY = spikyConstant * math.pow(h-deltaPosY, 3) if deltaPosY >= 0.0 and deltaPosY <= h else 0.0
-    gradZ = spikyConstant * math.pow(h-deltaPosZ, 3) if deltaPosZ >= 0.0 and deltaPosZ <= h else 0.0
+    if r_len <= 0.0 or r_len >= h :
+        return [0.0, 0.0, 0.0]
+
+    r = normalize(r)
+
+    spikyConstant = -45.0 / (math.pi * math.pow(h, 6))
+    gradX = spikyConstant * math.pow(h-r_len, 2) * r[0]
+    gradY = spikyConstant * math.pow(h-r_len, 2) * r[1]
+    gradZ = spikyConstant * math.pow(h-r_len, 2) * r[2]
 
     return [gradX, gradY, gradZ]
 
 # Density kernel
 def calculatePoly6(h, p1, p2) :
-    deltaPosX = p2[0] - p1[0]
-    deltaPosY = p2[1] - p1[1]
-    deltaPosZ = p2[2] - p1[2]
+    r = subtractVec(p1, p2)
+    r_len = getLengthOfVec(r)
 
-    length = math.sqrt(math.pow(deltaPosX, 2) + math.pow(deltaPosY, 2) + math.pow(deltaPosZ, 2))
-
-    return calculatePoly6Scalar(h, length)
+    return calculatePoly6Scalar(h, r_len)
 
 def calculatePoly6Scalar(h, scalar) :
-    poly6Constant = 315 / (math.pi * 64 * math.pow(h, 9))
-    grad = poly6Constant * math.pow(math.pow(h, 2) - math.pow(scalar, 2), 3) if scalar >= 0 and scalar <= h else 0
+    if scalar <= 0.0 or scalar >= h :
+        return 0.0
+    
+    poly6Constant = 315.0 / (math.pi * 64.0 * math.pow(h, 9))
+    grad = poly6Constant * math.pow(math.pow(h, 2) - math.pow(scalar, 2), 3) 
     return grad
 
 # ******************************************************** #
@@ -201,7 +205,7 @@ def calculateLambda( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsilon
         for j in range (1, len(neighbours[i])) :
             n_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
             gradient_j = calculateSpikyGradient(h, n_j, n_i)
-            scalarMult(gradient_j, rho_0)
+            scalarMult(gradient_j, 1.0/rho_0)
             sum_gradient = sum_gradient + dotProduct(gradient_j, gradient_j)
             addToVec(gradient_i, gradient_j)
 
@@ -237,13 +241,13 @@ def calculateDeltaPos( posX, posY, posZ, neighbours, nrOfParticles, rho_0, epsil
             corrScore = computeCorrectionScore(k, h, n, dQ, pos_j, pos_i)
             spiky = calculateSpikyGradient(h, pos_j, pos_i)
 
-            resultX = (lambda_ij + corrScore) * spiky[0] 
-            resultY = (lambda_ij + corrScore) * spiky[1] 
-            resultZ = (lambda_ij + corrScore) * spiky[2] 
+            resultX = resultX + (lambda_ij + corrScore) * spiky[0] 
+            resultY = resultY + (lambda_ij + corrScore) * spiky[1] 
+            resultZ = resultZ + (lambda_ij + corrScore) * spiky[2] 
         
-        resultX = resultX * rho_0
-        resultY = resultY * rho_0
-        resultZ = resultZ * rho_0
+        resultX = resultX * 1.0/rho_0
+        resultY = resultY * 1.0/rho_0
+        resultZ = resultZ * 1.0/rho_0
         deltaPosX.append(resultX)
         deltaPosY.append(resultY)
         deltaPosZ.append(resultZ)
@@ -301,6 +305,10 @@ def calculateNewVelocities(pos_i, pos_j, v_i, v_j) :
     nv2 = projectV1V2(v_i, pos_ji)
     nv2 = subtractVec(nv2, projectV1V2(v_j, pos_ij))
 
+    scaleVel = 0.25
+    scalarMult(nv1, scaleVel)
+    scalarMult(nv2, scaleVel)
+
     return [nv1, nv2]
 
 def projectV1V2(v1, v2) :
@@ -354,7 +362,7 @@ def calculateVorticityConfinement(h, posX, posY, posZ, vX, vY, vZ, neighbours) :
             v_j = [vX[neighbours[i][j]], vY[neighbours[i][j]], vZ[neighbours[i][j]]]
             pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
             v_ij = [v_j[0] - v_i[0], v_j[1] - v_i[1], v_j[2] - v_i[2]]
-            spiky = calculateSpikyGradient(h, pos_j, pos_i)
+            spiky = calculateSpikyGradient(h, pos_i, pos_j)
             addToVec(result, crossProduct(v_ij, spiky))
 
         vorticity.append(result)
@@ -371,7 +379,7 @@ def computeCorrectiveForce(h, posX, posY, posZ, vorticity, vortEps) :
         pos_i = [posX[i], posY[i], posZ[i]]
         for j in range (1, len(neighbours[i])) :
             pos_j = [posX[neighbours[i][j]], posY[neighbours[i][j]], posZ[neighbours[i][j]]]
-            spiky = calculateSpikyGradient(h, pos_j, pos_i)
+            spiky = calculateSpikyGradient(h, pos_i, pos_j)
             vortLength = getLengthOfVec(vorticity[neighbours[i][j]])
             scalarMult(spiky, vortLength)
             addToVec(result, spiky)
@@ -414,6 +422,8 @@ def computeXSPHViscosity(c, h, posX, posY, posZ, vX, vY, vZ, neighbours) :
     
     return viscosity
 
+
+
 # ****************************************************** #
 # ---------------------- MAIN -------------------------- #
 # ****************************************************** #
@@ -432,15 +442,15 @@ ppY = [0] * nrOfParticles
 ppZ = [0] * nrOfParticles
 
 gravity = -9.82
-dt = 0.012
-rho_0 = 1.0
+dt = 0.016
+rho_0 = 1000.0
 epsilon = 200.0
 correctionK = 0.001
 correctionN = 4.0
 correctionDeltaQ = 0.3
-vorticityEps = 1.0
+vorticityEps = 0.25
 XSPHC = 0.001
-h = 1.2
+h = 0.4
 
 # Playback options
 keyFrames = 100
@@ -476,6 +486,23 @@ for j in range ( 1, keyFrames ):
         # Apply velocity to position estimate
         ppY[i] = ppY[i] + dt * vY[i]
 
+        # Impose boundary constraint
+        collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], vX[i], vY[i], vZ[i], particleRadius)
+        ppX[i] = collision[0]
+        ppY[i] = collision[1]
+        ppZ[i] = collision[2]
+        vX[i] = collision[3]
+        vY[i] = collision[4]
+        vZ[i] = collision[5]
+
+    particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, vX, vY, vZ, particleRadius, neighbours)
+    ppX = particleCollision[0]
+    ppY = particleCollision[1]
+    ppZ = particleCollision[2]
+    vX = particleCollision[3]
+    vY = particleCollision[4]
+    vZ = particleCollision[5]
+
     neighbours = findNeighbours(ppX, ppY, ppZ, nrOfParticles, h)
     iterations = 0
     while iterations < maxIterations :
@@ -487,24 +514,24 @@ for j in range ( 1, keyFrames ):
             ppY[i] = ppY[i] + deltaPos[1][i]
             ppZ[i] = ppZ[i] + deltaPos[2][i]
 
-        particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, vX, vY, vZ, particleRadius, neighbours)
-        ppX = particleCollision[0]
-        ppY = particleCollision[1]
-        ppZ = particleCollision[2]
-        vX = particleCollision[3]
-        vY = particleCollision[4]
-        vZ = particleCollision[5]
-
-        for i in range (1, nrOfParticles) :           
-            collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], vX[i], vY[i], vZ[i], particleRadius)
-            ppX[i] = collision[0]
-            ppY[i] = collision[1]
-            ppZ[i] = collision[2]
-            vX[i] = collision[3]
-            vY[i] = collision[4]
-            vZ[i] = collision[5]
-
         iterations = iterations + 1
+
+    particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, vX, vY, vZ, particleRadius, neighbours)
+    ppX = particleCollision[0]
+    ppY = particleCollision[1]
+    ppZ = particleCollision[2]
+    vX = particleCollision[3]
+    vY = particleCollision[4]
+    vZ = particleCollision[5]
+
+    for i in range (1, nrOfParticles) :           
+        collision = calculateCollisionResponse(ppX[i], ppY[i], ppZ[i], vX[i], vY[i], vZ[i], particleRadius)
+        ppX[i] = collision[0]
+        ppY[i] = collision[1]
+        ppZ[i] = collision[2]
+        vX[i] = collision[3]
+        vY[i] = collision[4]
+        vZ[i] = collision[5]
 
     for i in range (1, nrOfParticles) :
         pos = [ cmds.getAttr( 'particle'+str(i)+'.translateX' ),
