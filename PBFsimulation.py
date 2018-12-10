@@ -27,7 +27,6 @@ cmds.directionalLight( light, q=True, intensity=True )
 
 # Create the groundPlane
 cmds.polyCube(w=5, h=2, d=5, sx=1, sy=1, sz=1, ax=(0, 1, 0), name='transparentCube')
-cmds.polyNormal() #change normals
 
 # Delete top of cube
 cmds.select( 'transparentCube.f[1]' )
@@ -453,8 +452,8 @@ XSPHC = 0.001
 h = 0.4
 
 # Playback options
-keyFrames = 100
-cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 100 )
+keyFrames = 150
+cmds.playbackOptions( playbackSpeed = 0, maxPlaybackSpeed = 1, min = 1, max = 150 )
 startTime = cmds.playbackOptions( query = True, minTime = True )
 endTime = cmds.playbackOptions( query = True, maxTime = True )
 time = startTime
@@ -474,7 +473,6 @@ for i in range ( 1, nrOfParticles ):
     setNextKeyParticle( 'particle'+str(i), time, 'translateX', pos[0] )
     setNextKeyParticle( 'particle'+str(i), time, 'translateY', pos[1] )
     setNextKeyParticle( 'particle'+str(i), time, 'translateZ', pos[2] )
-     
 
 for j in range ( 1, keyFrames ):
     print 'frame: ' + str(j)
@@ -495,15 +493,8 @@ for j in range ( 1, keyFrames ):
         vY[i] = collision[4]
         vZ[i] = collision[5]
 
-    particleCollision = calculateParticleCollisionResponse(ppX, ppY, ppZ, vX, vY, vZ, particleRadius, neighbours)
-    ppX = particleCollision[0]
-    ppY = particleCollision[1]
-    ppZ = particleCollision[2]
-    vX = particleCollision[3]
-    vY = particleCollision[4]
-    vZ = particleCollision[5]
-
     neighbours = findNeighbours(ppX, ppY, ppZ, nrOfParticles, h)
+    
     iterations = 0
     while iterations < maxIterations :
         lambdas = calculateLambda( ppX, ppY, ppZ, neighbours, nrOfParticles, rho_0, epsilon, h)     
